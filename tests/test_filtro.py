@@ -134,32 +134,107 @@ def test_extrair_escopo_remoto(nome, local, modalidade, esperado):
 # ---------------------------------------------------------------------------
 
 CASOS_COMBINA_COM = [
-    # Anti-regressão crítica (mesmo caso do teste de escopo, agora
-    # end-to-end): vaga americana sem sigla de estado tem que ser barrada
-    # no perfil internacional (que só aceita LATAM/Ibéria).
-    ("seattle-barrada-perfil-intl", "Senior Data Analyst", "Greater Seattle Area", "Remoto", PERFIL_INTL, False),
-    # Remota sem mercado declarado: só passa se o TÍTULO afirmar idioma/
-    # região (spanish/portuguese/latam/...) — regra adicionada depois que
-    # "Senior Data Analyst" remoto sem relação nenhuma com o mercado
-    # passava só por não ter nada que a rejeitasse.
-    ("spanish-speaking-sem-mercado-passa", "Spanish Speaking Data Analyst", "Remote", "Remoto", PERFIL_INTL, True),
-    ("data-analyst-latam-passa", "Data Analyst LATAM", "Remote", "Remoto", PERFIL_INTL, True),
-    ("sem-idioma-sem-mercado-barrada", "Senior Data Analyst", "Remote", "Remoto", PERFIL_INTL, False),
-    # Mercado CONFIRMADO no texto dispensa o sinal de idioma no título — o
-    # país hispanofalante já é o próprio sinal.
-    ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Data Analyst", "Remote - Espanha", "Remoto", PERFIL_INTL, True),
+    # Internacional: mercado explicitamente incompatível continua barrado.
+    (
+        "seattle-barrada-perfil-intl",
+        "Detection Engineer",
+        "Greater Seattle Area",
+        "Remoto",
+        PERFIL_INTL,
+        False,
+    ),
 
-    # Perfil Brasil: cargo e cidade são checados em campos separados
-    # (título vs. local) — cidade fora da lista aceita barra mesmo com
-    # cargo batendo.
-    ("cidade-fora-da-lista-barrada", "Analista de Dados", "Nova York", "Presencial", PERFIL_BR, False),
-    ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-forte-cidade-aceita-passa", "Analista de Dados Pleno", "Recife, PE", "Presencial", PERFIL_BR, True),
-    # keywords_ambiguo (ex: "Business Analyst") só conta com qualificador
-    # de dados junto no título — sozinho é ruído de outra área (RH,
-    # finanças).
-    ("cargo-ambiguo-sem-qualificador-barrado", "Business Analyst", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-ambiguo-com-qualificador-passa", "Business Analyst com SQL", "Recife, PE", "Presencial", PERFIL_BR, True),
+    # Internacional: remoto sem restrição geográfica explícita é aceito.
+    # O perfil internacional novo não exige mais espanhol/português.
+    (
+        "detection-engineer-remoto-global-passa",
+        "Detection Engineer",
+        "Remote",
+        "Remoto",
+        PERFIL_INTL,
+        True,
+    ),
+
+    (
+        "cloud-security-remoto-global-passa",
+        "Cloud Security Engineer",
+        "Remote",
+        "Remoto",
+        PERFIL_INTL,
+        True,
+    ),
+
+    # Cargo que não pertence mais ao radar deve ser barrado.
+    (
+        "data-analyst-fora-do-escopo-intl",
+        "Senior Data Analyst",
+        "Remote",
+        "Remoto",
+        PERFIL_INTL,
+        False,
+    ),
+
+    # Mercado internacional explicitamente permitido.
+    (
+        "mercado-confirmado-espanha-passa",
+        "Detection Engineer",
+        "Remote - Espanha",
+        "Remoto",
+        PERFIL_INTL,
+        True,
+    ),
+
+    # Perfil Brasil: cidade fora da whitelist deve barrar mesmo cargo válido.
+    (
+        "cidade-fora-da-lista-barrada",
+        "Cloud Security Engineer",
+        "Nova York",
+        "Presencial",
+        PERFIL_BR,
+        False,
+    ),
+
+    # Cargo completamente fora de cybersecurity.
+    (
+        "cargo-fora-do-escopo-barrado",
+        "Vendedor Externo",
+        "Recife, PE",
+        "Presencial",
+        PERFIL_BR,
+        False,
+    ),
+
+    # Cargo forte + cidade aceita.
+    (
+        "cargo-forte-cidade-aceita-passa",
+        "Detection Engineer",
+        "Recife, PE",
+        "Presencial",
+        PERFIL_BR,
+        True,
+    ),
+
+    # Security Analyst é propositalmente ambíguo.
+    # Sem um qualificador de SecOps/Cloud/Detection deve ser barrado.
+    (
+        "cargo-ambiguo-sem-qualificador-barrado",
+        "Security Analyst",
+        "Recife, PE",
+        "Presencial",
+        PERFIL_BR,
+        False,
+    ),
+
+    # Cargo genérico + SIEM confirma que é o tipo de Security Analyst
+    # que queremos encontrar.
+    (
+        "cargo-ambiguo-com-qualificador-passa",
+        "Security Analyst - SIEM",
+        "Recife, PE",
+        "Presencial",
+        PERFIL_BR,
+        True,
+    ),
 ]
 
 
