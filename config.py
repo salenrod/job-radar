@@ -4,56 +4,73 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # -----------------------------------------------------------------------------
-# PERFIL BRASIL - CLOUD SECURITY / DETECTION ENGINEERING / SECURITY OPERATIONS
+# PERFIL BRASIL - CLOUD SECURITY / DETECTION / SOC-SECOps
 # -----------------------------------------------------------------------------
-#
-# IMPORTANTE:
-# Alguns nomes de variaveis (ex.: QUALIFICADORES_DADOS) foram mantidos porque
-# fazem parte da interface esperada pelo job.py do projeto original. O conteudo,
-# no entanto, foi totalmente adaptado para Cybersecurity.
+# Regra de desenho:
+# - titulos muito especificos passam direto;
+# - titulos genericos de Seguranca da Informacao tambem podem passar, porque
+#   muitas empresas publicam "Analista/Engenheiro de Seguranca" e deixam SIEM,
+#   Cloud, EDR e resposta a incidentes apenas na descricao;
+# - subareas fora do objetivo (GRC, IAM puro, AppSec puro etc.) sao barradas
+#   quando aparecem explicitamente no TITULO.
 
-
-# Cargos fortes: titulos suficientemente especificos para Cloud Security,
-# Detection Engineering, SOC/SecOps, SIEM, Threat Hunting e Incident Response.
-# Basta o titulo conter um deles para o filtro de cargo considerar a vaga.
 KEYWORDS_CARGO_FORTE = [
-    # Cloud Security
+    # Cloud Security - inclui ordem PT/EN usada no mercado brasileiro
+    "Cloud Security",
     "Cloud Security Engineer",
     "Cloud Security Analyst",
+    "Cloud Security Specialist",
+    "Analista de Cloud Security",
+    "Engenheiro de Cloud Security",
+    "Especialista de Cloud Security",
+    "Especialista em Cloud Security",
+    "Analista de Seguranca Cloud",
+    "Engenheiro de Seguranca Cloud",
+    "Analista de Seguranca em Nuvem",
+    "Engenheiro de Seguranca em Nuvem",
 
     # Detection Engineering / Threat Detection
     "Detection Engineer",
+    "Detection Engineering",
     "Security Detection Engineer",
     "Threat Detection Engineer",
+    "Threat Detection",
     "Detection and Response Engineer",
 
-    # SOC / SecOps
+    # SOC / SecOps / Security Operations
     "SOC Analyst",
     "Analista SOC",
     "Analista de SOC",
+    "SOC Engineer",
     "Security Operations Analyst",
     "Security Operations Engineer",
+    "Security Operations Center Analyst",
+    "Security Operations",
     "SecOps Engineer",
+    "SecOps Analyst",
 
-    # SIEM / Security Monitoring
+    # SIEM / Monitoring
     "SIEM Engineer",
     "SIEM Analyst",
     "Engenheiro SIEM",
     "Analista SIEM",
+    "Security Monitoring Engineer",
+    "Security Monitoring Analyst",
 
     # Threat Hunting / Incident Response / Blue Team
     "Threat Hunter",
     "Threat Hunting Analyst",
     "Incident Response Engineer",
     "Incident Response Analyst",
+    "Cyber Defense Engineer",
+    "Cyber Defense Analyst",
     "Blue Team Engineer",
     "Blue Team Analyst",
 ]
 
-
-# Cargos ambiguos: existem em varias subareas de seguranca. Para evitar vagas
-# de GRC, compliance, awareness, AppSec puro, IAM puro ou vulnerabilidades, eles
-# so passam se o TITULO tambem contiver um qualificador tecnico da lista abaixo.
+# Cargos genericos. Eles existem em varias subareas, mas sao comuns em vagas
+# defensivas boas. O job.py permite esses titulos SEM qualificador no proprio
+# titulo, desde que nenhuma exclusao explicita abaixo apareca.
 KEYWORDS_CARGO_AMBIGUO = [
     "Security Analyst",
     "Security Engineer",
@@ -66,101 +83,93 @@ KEYWORDS_CARGO_AMBIGUO = [
     "Security Specialist",
     "Analista de Seguranca",
     "Analista de Seguranca da Informacao",
+    "Analista de Ciberseguranca",
     "Engenheiro de Seguranca",
+    "Engenheiro de Seguranca da Informacao",
+    "Engenheiro de Ciberseguranca",
     "Especialista em Seguranca",
     "Especialista em Seguranca da Informacao",
 ]
 
-
-# O nome da variavel e legado do projeto original e precisa ser preservado.
-# Na pratica, estes sao QUALIFICADORES_DE_SEGURANCA. Um cargo ambiguo acima
-# precisa conter pelo menos um destes termos no titulo para ser aprovado.
+# Se um cargo generico trouxer um destes termos no titulo, ganha o motivo
+# "Cargo ambiguo + qualificador". Mantido com o nome legado esperado pelo
+# projeto original.
 QUALIFICADORES_DADOS = [
-    # Cloud
-    "cloud",
-    "nuvem",
-    "aws",
-    "azure",
-    "gcp",
-
-    # Detection / SOC / SIEM
-    "detection",
-    "detecao",
-    "soc",
-    "secops",
-    "security operations",
-    "siem",
-    "splunk",
-    "sentinel",
-    "qradar",
-    "security monitoring",
-    "monitoramento",
-
-    # Endpoint / response / hunting
-    "edr",
-    "xdr",
-    "defender",
-    "crowdstrike",
-    "threat",
-    "ameaca",
-    "hunting",
-    "incident response",
-    "resposta a incidentes",
-    "dfir",
-    "soar",
-
-    # Detection-as-Code / analytics
-    "kql",
-    "spl",
-    "sigma",
-    "mitre",
+    "cloud", "nuvem", "aws", "azure", "gcp",
+    "detection", "detecao", "soc", "secops", "security operations",
+    "siem", "splunk", "sentinel", "qradar", "security monitoring", "monitoramento",
+    "edr", "xdr", "defender", "crowdstrike", "threat", "ameaca", "hunting",
+    "incident response", "resposta a incidentes", "dfir", "soar",
+    "kql", "spl", "sigma", "mitre",
 ]
 
+# Titulos genericos de seguranca sao rejeitados quando o TITULO declara que a
+# funcao e principalmente uma trilha fora do objetivo deste radar. Evitamos
+# palavras soltas como "risk" para nao bloquear um Detection Engineer que apenas
+# mencione risco de forma incidental.
+KEYWORDS_EXCLUSAO_TITULO = [
+    "GRC",
+    "Governance",
+    "Governanca",
+    "Compliance",
+    "Conformidade",
+    "IAM",
+    "Identity and Access",
+    "Identity Access",
+    "Gestao de Acessos",
+    "Application Security",
+    "AppSec",
+    "Product Security",
+    "Pentest",
+    "Penetration Tester",
+    "Red Team",
+    "Offensive Security",
+    "Vulnerability Management",
+    "Gestao de Vulnerabilidades",
+    "Security Awareness",
+    "Conscientizacao",
+    "Privacy",
+    "Privacidade",
+    "TPRM",
+    "Third Party Risk",
+    "Auditoria",
+    "Security Auditor",
+]
 
-# Ferramentas/plataformas que podem aparecer como o nucleo do titulo, por
-# exemplo "Splunk Engineer" ou "Microsoft Sentinel Analyst". O projeto so
-# aprova esse caminho quando tambem ha uma palavra de cargo no titulo.
+# Permite "Analista/Engenheiro de Seguranca" mesmo quando SIEM/Cloud/etc.
+# so aparecem na descricao da vaga. Isso corrige um falso negativo importante
+# do modelo anterior, que via apenas o titulo do card do LinkedIn.
+PERMITIR_CARGO_AMBIGUO_SEM_QUALIFICADOR = True
+
 FERRAMENTAS_TITULO = [
-    "Splunk",
-    "Microsoft Sentinel",
-    "Sentinel",
-    "QRadar",
-    "SIEM",
-    "Defender XDR",
-    "Microsoft Defender",
-    "CrowdStrike",
-    "EDR",
-    "XDR",
+    "Splunk", "Microsoft Sentinel", "Sentinel", "QRadar", "SIEM",
+    "Defender XDR", "Microsoft Defender", "CrowdStrike", "EDR", "XDR",
 ]
 
-
-# Palavras de cargo aceitas quando o titulo e centrado numa ferramenta.
 QUALIFICADORES_CARGO = [
-    "analista",
-    "analyst",
-    "engenheiro",
-    "engineer",
-    "especialista",
-    "specialist",
-    "arquiteto",
-    "architect",
-    "consultor",
-    "consultant",
-    "hunter",
+    "analista", "analyst", "engenheiro", "engineer", "especialista", "specialist",
+    "arquiteto", "architect", "consultor", "consultant", "hunter",
 ]
-
 
 KEYWORDS = KEYWORDS_CARGO_FORTE + KEYWORDS_CARGO_AMBIGUO
 
+# -----------------------------------------------------------------------------
+# BUSCA
+# -----------------------------------------------------------------------------
+# TERMOS_CORE rodam em TODO ciclo. O restante continua em rodizio para conter
+# custo. Isso evita esperar ~12h para pesquisar de novo um titulo essencial.
+TERMOS_CORE = [
+    "analista de seguranca",
+    "analista de seguranca da informacao",
+    "engenheiro de seguranca",
+    "cloud security",
+    "security analyst",
+    "security engineer",
+    "soc analyst",
+    "security operations",
+    "detection engineer",
+]
 
-# -----------------------------------------------------------------------------
-# TERMOS DE BUSCA
-# -----------------------------------------------------------------------------
-# KEYWORDS define o que pode passar no filtro de titulo.
-# TERMOS_BUSCA define o que os scrapers efetivamente pesquisam.
-#
-# TERMOS_CARGO e derivado automaticamente das keywords para que todo cargo
-# aceito pelo filtro tambem tenha chance de ser pesquisado.
 TERMOS_CARGO_EXTRA = [
     "cloud security",
     "detection engineering",
@@ -171,13 +180,8 @@ TERMOS_CARGO_EXTRA = [
     "threat hunting",
 ]
 
-TERMOS_CARGO = sorted(
-    set(k.lower() for k in KEYWORDS) | set(TERMOS_CARGO_EXTRA)
-)
+TERMOS_CARGO = sorted(set(k.lower() for k in KEYWORDS) | set(TERMOS_CARGO_EXTRA))
 
-
-# Termos de stack com alto valor para o perfil alvo. Evitei uma lista enorme
-# porque cada termo adicional aumenta o custo/tempo das rodadas de scraping.
 TERMOS_FERRAMENTA = [
     "splunk security",
     "microsoft sentinel",
@@ -188,105 +192,55 @@ TERMOS_FERRAMENTA = [
 ]
 
 TERMOS_BUSCA = TERMOS_CARGO + TERMOS_FERRAMENTA
-
-
-# O projeto usa rodizio de termos para controlar o custo de cada execucao.
-# 12 oferece cobertura um pouco mais rapida que o default 10 sem transformar
-# cada ciclo em uma busca gigantesca.
-TERMOS_POR_CICLO = 12
-
+# Quantidade ROTATIVA por ciclo. Os TERMOS_CORE entram por fora desse limite.
+TERMOS_POR_CICLO = 10
 
 # -----------------------------------------------------------------------------
-# LOCALIZACAO - BRASIL
+# LOCALIZACAO
 # -----------------------------------------------------------------------------
-# A lista e uma whitelist. "Remoto" fica primeiro por ser a modalidade mais
-# importante; as demais cidades cobrem os principais polos de tecnologia do BR.
-# Se quiser somente remoto, basta deixar CIDADES = ["Remoto"].
 CIDADES = [
     "Remoto",
-    "São Paulo",
+    "Sao Paulo",
     "Campinas",
     "Barueri",
     "Rio de Janeiro",
     "Belo Horizonte",
     "Curitiba",
-    "Florianópolis",
+    "Florianopolis",
     "Porto Alegre",
-    "Brasília",
+    "Brasilia",
     "Recife",
 ]
 
-
-# Lista compartilhada com config_intl.py. Mantida para compatibilidade com o
-# projeto original. O eixo presencial/hibrido iberico permanece desligado.
 CIDADES_EUROPA_IBERICA = [
-    "Portugal",
-    "Lisboa",
-    "Porto",
-    "Braga",
-    "Espanha",
-    "España",
-    "Spain",
-    "Madrid",
-    "Barcelona",
-    "Valencia",
+    "Portugal", "Lisboa", "Porto", "Braga", "Espanha", "Espana", "Spain",
+    "Madrid", "Barcelona", "Valencia",
 ]
-
 ATIVAR_EIXO_IBERICO_BR = False
 
-
-# Mercado principal do pipeline BR. Aqui o LinkedIn pode retornar presencial,
-# hibrido e remoto; o filtro de CIDADES acima decide o que realmente passa.
+# O perfil Brasil agora busca apenas no Brasil. Antes ele repetia Argentina,
+# Chile, Mexico, Colombia, Espanha e Portugal em TODA keyword, enquanto o perfil
+# internacional fazia a mesma cobertura logo depois. A duplicacao aumentava
+# muito a carga e o risco de rate-limit do LinkedIn.
 LOCATIONS_LINKEDIN = ["Brasil"]
+LOCATIONS_LINKEDIN_REMOTO_APENAS = []
 
+# Uma vaga achada na busca brasileira pode declarar Brazil ou LATAM.
+MERCADOS_REMOTO_ACEITOS = ["Brasil", "LATAM"]
 
-# Mercados externos pesquisados apenas com filtro remoto no LinkedIn. Mantive
-# LATAM + Iberia, que sao coerentes com a arquitetura atual do projeto e evitam
-# inundar o radar com vagas "US only" de mercados onde work authorization tende
-# a ser um bloqueio frequente.
-LOCATIONS_LINKEDIN_REMOTO_APENAS = [
-    "Argentina",
-    "Chile",
-    "México",
-    "Colômbia",
-    "Espanha",
-    "Portugal",
-]
-
-
-# Quando uma vaga remota declara explicitamente um mercado, ele precisa bater
-# nesta allowlist. Vagas realmente worldwide/anywhere sao tratadas pelo job.py
-# como sem restricao explicita e nao dependem desta lista.
-MERCADOS_REMOTO_ACEITOS = [
-    "Brasil",
-    "LATAM",
-    "Argentina",
-    "Chile",
-    "México",
-    "Colômbia",
-    "Portugal",
-    "Espanha",
-]
-
+# Mesma empresa+título pode ser uma NOVA abertura meses depois. URL/id continua
+# deduplicando para sempre; chave secundaria so bloqueia repeticao recente.
+JANELA_DEDUP_CHAVE_SECUNDARIA_DIAS = int(
+    os.getenv("JANELA_DEDUP_CHAVE_SECUNDARIA_DIAS", 14)
+)
 
 # -----------------------------------------------------------------------------
 # EXECUCAO / DIGEST / TELEGRAM
 # -----------------------------------------------------------------------------
 INTERVALO_MINUTOS = int(os.getenv("INTERVALO_MINUTOS", 180))
-
-
-# Com a configuracao de Cybersecurity, score 6 ja representa um sinal forte
-# interessante (ex.: cargo forte + mercado + senioridade neutra). Assim vagas
-# bem alinhadas podem chegar imediatamente e o restante fica no digest.
 LIMIAR_DIGEST_IMEDIATO = 6
-
-
-# 0 UTC = 21:00 no horario de Brasilia (UTC-3).
 DIGEST_HORA_UTC = 0
-
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-
-
 DB_PATH = os.path.join(os.path.dirname(__file__), "data", "jobs.db")

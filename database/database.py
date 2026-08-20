@@ -3,7 +3,7 @@ import sqlite3
 import os
 from contextlib import contextmanager
 
-from config import DB_PATH
+from config import DB_PATH, JANELA_DEDUP_CHAVE_SECUNDARIA_DIAS
 from job import _normalizar
 
 
@@ -205,16 +205,33 @@ def iniciar_db():
 
 
 def ja_vista(job) -> bool:
-    """Recebe o Job inteiro (não só o id): precisa checar duas chaves.
+    """Deduplicacao em duas camadas.
 
-    id = hash da URL (pega repost exato na mesma fonte). chave_secundaria =
-    empresa+título normalizados (pega a MESMA vaga publicada em fontes
-    diferentes, com URL diferente em cada uma — ver Job.chave_secundaria).
+    - Mesmo ID/URL normalizada: duplicata permanente.
+    - Mesma empresa+título: duplicata apenas dentro de uma janela recente
+      (config.JANELA_DEDUP_CHAVE_SECUNDARIA_DIAS). Uma empresa pode reabrir
+      meses depois exatamente o mesmo cargo com outro job ID; bloquear a
+      chave secundaria para sempre fazia vaga nova real nunca notificar.
     """
     with _conectar() as conn:
+        if conn.execute(
+            "SELECT 1 FROM vagas_vistas WHERE id = ? LIMIT 1", (job.id,)
+        ).fetchone() is not None:
+            return True
+
+        dias = max(0, int(JANELA_DEDUP_CHAVE_SECUNDARIA_DIAS))
+        if dias == 0:
+            return False
+
         cursor = conn.execute(
-            "SELECT 1 FROM vagas_vistas WHERE id = ? OR chave_secundaria = ? LIMIT 1",
-            (job.id, job.chave_secundaria),
+            """
+            SELECT 1
+            FROM vagas_vistas
+            WHERE chave_secundaria = ?
+              AND encontrada_em >= datetime('now', ?)
+            LIMIT 1
+            """,
+            (job.chave_secundaria, f"-{dias} days"),
         )
         return cursor.fetchone() is not None
 
@@ -282,6 +299,41 @@ def definir_feedback(job_id: str, feedback: str):
         conn.execute(
             "UPDATE vagas_vistas SET feedback = ? WHERE id = ?",
             (feedback, job_id),
+        )
+
+
+def obter_vagas_pendentes_digest_detalhadas(perfil_chave: str) -> list[dict]:
+    """Retorna a fila do digest com campos suficientes para REAPLICAR as
+    regras atuais antes do envio. Isso impede que vagas antigas de um perfil
+    anterior (ex.: Data/BI) continuem aparecendo depois que config.py mudou
+    para Cybersecurity.
+    """
+    with _conectar() as conn:
+        cursor = conn.execute(
+            """
+            SELECT id, titulo, empresa, local, link, site, publicado_em, modalidade,
+                   relevancia, exploratoria
+            FROM vagas_vistas
+            WHERE perfil = ? AND digest_pendente = 1
+            ORDER BY relevancia DESC, encontrada_em ASC
+            """,
+            (perfil_chave,),
+        )
+        colunas = [d[0] for d in cursor.description]
+        return [dict(zip(colunas, linha)) for linha in cursor.fetchall()]
+
+
+def descartar_vagas_digest(ids: list[str]):
+    """Remove da fila de digest registros que nao combinam mais com as regras
+    atuais. Nao apaga historico nem torna a vaga 'nova' novamente; apenas
+    impede uma configuracao antiga de contaminar o digest atual.
+    """
+    if not ids:
+        return
+    with _conectar() as conn:
+        conn.executemany(
+            "UPDATE vagas_vistas SET digest_pendente = 0 WHERE id = ?",
+            [(id_,) for id_ in ids],
         )
 
 

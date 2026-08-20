@@ -214,13 +214,81 @@ CASOS_COMBINA_COM = [
         True,
     ),
 
-    # Security Analyst é propositalmente ambíguo.
-    # Sem um qualificador de SecOps/Cloud/Detection deve ser barrado.
+    # Cargos genericos de seguranca agora passam quando nao declaram uma
+    # trilha excluida no proprio titulo. Muitas vagas deixam SIEM/Cloud/EDR
+    # apenas na descricao e antes eram falso negativo.
     (
-        "cargo-ambiguo-sem-qualificador-barrado",
+        "cargo-generico-seguranca-passa",
         "Security Analyst",
         "Recife, PE",
         "Presencial",
+        PERFIL_BR,
+        True,
+    ),
+
+    # Regressao real: vaga Blu enviada pelo usuario. O titulo e generico, mas
+    # a descricao traz SIEM, Cloud e resposta a incidentes. O card precisa
+    # chegar ao usuario em vez de ser descartado antes de abrir a descricao.
+    (
+        "blu-engenheiro-seguranca-pleno-remoto-passa",
+        "Engenheiro de Segurança da Informação Pleno (Remoto)",
+        "Brasil",
+        "Remoto",
+        PERFIL_BR,
+        True,
+    ),
+
+    # Regressao real: ordem portugues/ingles usada pela Zup.
+    (
+        "zup-pessoa-analista-cloud-security-pleno-passa",
+        "Pessoa Analista de Cloud Security Pleno",
+        "Brasil",
+        "Remoto",
+        PERFIL_BR,
+        True,
+    ),
+
+    # Publicacoes de recrutadores frequentemente usam apenas este titulo e
+    # colocam toda a evidencia tecnica no corpo do post.
+    (
+        "analista-seguranca-generico-remoto-passa",
+        "Analista de Segurança",
+        "Brasil",
+        "Remoto",
+        PERFIL_BR,
+        True,
+    ),
+
+    # Trilhas fora do foco continuam explicitamente bloqueadas.
+    (
+        "security-analyst-grc-barrado",
+        "Security Analyst - GRC & Compliance",
+        "Brasil",
+        "Remoto",
+        PERFIL_BR,
+        False,
+    ),
+    (
+        "security-engineer-iam-barrado",
+        "Security Engineer - IAM",
+        "Brasil",
+        "Remoto",
+        PERFIL_BR,
+        False,
+    ),
+    (
+        "security-engineer-appsec-barrado",
+        "Security Engineer - Application Security",
+        "Brasil",
+        "Remoto",
+        PERFIL_BR,
+        False,
+    ),
+    (
+        "analista-vulnerabilidades-barrado",
+        "Analista de Segurança - Gestão de Vulnerabilidades",
+        "Brasil",
+        "Remoto",
         PERFIL_BR,
         False,
     ),

@@ -4,7 +4,7 @@ import sys
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from config import DIGEST_HORA_UTC, INTERVALO_MINUTOS, LIMIAR_DIGEST_IMEDIATO
 from database.database import (
@@ -14,7 +14,8 @@ from database.database import (
     ja_vista,
     marcar_digest_enviado,
     obter_metadado,
-    obter_vagas_pendentes_digest,
+    obter_vagas_pendentes_digest_detalhadas,
+    descartar_vagas_digest,
     salvar_vaga,
 )
 from notifier.telegram import (
@@ -25,15 +26,26 @@ from notifier.telegram import (
     processar_feedback_pendente,
 )
 from perfis import FREQUENCIA_ALTA, PERFIS, Perfil
+from job import Job
 from utils.filtro import filtrar_vagas
 from logger import get_logger
 
 logger = get_logger()
 
+FUSO_BRASILIA = timezone(timedelta(hours=-3))
+
+
+def _agora_brasilia() -> datetime:
+    return datetime.now(FUSO_BRASILIA)
+
+
+def _hoje_brasilia() -> date:
+    return _agora_brasilia().date()
+
 
 def _fontes_baixa_frequencia_ja_rodaram_hoje(perfil: Perfil) -> bool:
     chave = f"baixa_frequencia_ultimo_dia_{perfil.chave}"
-    return obter_metadado(chave) == date.today().isoformat()
+    return obter_metadado(chave) == _hoje_brasilia().isoformat()
 
 
 # Não é mais uma lista fixa construída uma vez: os scrapers recebem só o
@@ -58,135 +70,164 @@ def _construir_scrapers(perfil: Perfil, termos_busca: list[str]):
         # sido tentada hoje — não deve ser tentada de novo no ciclo
         # seguinte só porque deu erro. Falha individual já é tratada e
         # logada normalmente em ciclo_de_busca(), como qualquer scraper.
-        definir_metadado(f"baixa_frequencia_ultimo_dia_{perfil.chave}", date.today().isoformat())
+        definir_metadado(f"baixa_frequencia_ultimo_dia_{perfil.chave}", _hoje_brasilia().isoformat())
 
     return scrapers
 
 
 def _proximo_bloco_termos(perfil: Perfil) -> list[str]:
-    """Rodízio: cada ciclo pega um BLOCO fixo (perfil.termos_por_ciclo) de
-    perfil.termos_busca, começando de onde o ciclo anterior parou, e avança
-    — volta pro início quando chega no fim da lista. A posição fica salva
-    no jobs.db (tabela metadados, chave com sufixo do perfil — dois perfis
-    rotacionam de forma independente), então sobrevive entre execuções do
-    GitHub Actions (cada run é uma máquina nova).
+    """Retorna TERMOS CORE + um bloco rotativo.
 
-    Isso é o que desacopla custo por ciclo do tamanho da lista de termos:
-    lista grande leva mais ciclos pra cobrir tudo, mas cada ciclo individual
-    continua custando o mesmo. Sem isso, dobrar a lista de termos dobrava o
-    tempo de TODO ciclo.
+    Os termos core rodam em todo ciclo; apenas o restante avanca pelo offset
+    persistido no jobs.db. Assim uma vaga com titulo essencial nao precisa
+    esperar toda a lista girar novamente para ser descoberta.
     """
-    total = len(perfil.termos_busca)
-    if total == 0:
-        return []
+    core = list(dict.fromkeys(perfil.termos_core))
+    core_set = set(core)
+    rotativos = [t for t in perfil.termos_busca if t not in core_set]
 
-    tamanho_bloco = min(perfil.termos_por_ciclo, total)
+    if not rotativos:
+        return core
 
-    chave_offset = f"termos_offset_{perfil.chave}"
+    tamanho_bloco = min(perfil.termos_por_ciclo, len(rotativos))
+    # Chave nova: nao reaproveita offset calculado quando core e rotativos
+    # ainda faziam parte da mesma lista.
+    chave_offset = f"termos_offset_rotativos_v2_{perfil.chave}"
     offset_salvo = obter_metadado(chave_offset)
-    # % total protege contra a lista ter encolhido desde o último ciclo
-    # (termo removido do config.py) — sem isso, um offset salvo maior que o
-    # tamanho atual da lista quebraria o acesso por índice abaixo.
-    offset = int(offset_salvo) % total if offset_salvo else 0
+    offset = int(offset_salvo) % len(rotativos) if offset_salvo else 0
 
-    bloco = [perfil.termos_busca[(offset + i) % total] for i in range(tamanho_bloco)]
-
-    definir_metadado(chave_offset, str((offset + tamanho_bloco) % total))
-
-    return bloco
+    bloco = [rotativos[(offset + i) % len(rotativos)] for i in range(tamanho_bloco)]
+    definir_metadado(chave_offset, str((offset + tamanho_bloco) % len(rotativos)))
+    return core + bloco
 
 
 def _enviar_heartbeat_diario(
     perfil: Perfil, total_novas: int, scrapers_com_problema: list[str], total_fontes: int
 ):
-    """No máximo 1 mensagem por dia (por perfil) confirmando que o ciclo
-    rodou.
+    """Envia no maximo um heartbeat por DIA DE BRASILIA e so marca como
+    enviado quando o Telegram confirma sucesso.
 
-    O alerta de saúde só dispara quando ≥50% das fontes falha — mas se o
-    workflow parar de rodar por completo (cron desabilitado pelo GitHub
-    Actions por inatividade do repositório, erro de config, etc.), não
-    existe ALERTA NENHUM disso: silêncio no Telegram fica idêntico a "rodou
-    e não achou vaga nova". O heartbeat fecha essa lacuna — se ele parar de
-    chegar um dia, o problema é o workflow não estar rodando, não a busca
-    não ter achado nada. Por perfil: silêncio só do perfil Internacional
-    (por exemplo) fica visível mesmo com o perfil Brasil rodando normal.
-
-    A data do último envio fica salva no próprio jobs.db (tabela
-    metadados), então sobrevive entre execuções do GitHub Actions (cada
-    run é uma máquina nova) e não manda duplicado se o workflow rodar mais
-    de uma vez no mesmo dia (cron normal ou workflow_dispatch manual).
+    A versao anterior usava a data UTC do runner; por isso o heartbeat do
+    dia seguinte podia aparecer ainda as 21h do dia anterior no Telegram.
+    Alem disso, uma falha transitoria de envio era marcada como sucesso e
+    impedia nova tentativa ate o dia seguinte.
     """
     chave = f"heartbeat_ultimo_dia_{perfil.chave}"
-    hoje = date.today().isoformat()
+    hoje = _hoje_brasilia().isoformat()
     if obter_metadado(chave) == hoje:
         return
 
-    hora_brasilia = datetime.now(timezone.utc).strftime("%H:%M UTC")
+    agora_br = _agora_brasilia().strftime("%H:%M BRT")
     if scrapers_com_problema:
         status = f"{len(scrapers_com_problema)}/{total_fontes} fonte(s) com problema"
     else:
         status = "todas as fontes ok"
 
-    enviar_mensagem(
+    sucesso = enviar_mensagem(
         f"💓 <b>JobRadar {perfil.nome} ativo</b>\n\n"
-        f"Confirmação diária: o ciclo rodou agora ({hora_brasilia}, {status}). "
+        f"Confirmação diária: o ciclo rodou agora ({agora_br}, {status}). "
         f"{total_novas} vaga(s) nova(s) neste ciclo.\n\n"
         "Se essa mensagem parar de chegar, o workflow parou de rodar — "
         "não que faltou vaga."
     )
-    definir_metadado(chave, hoje)
+    if sucesso:
+        definir_metadado(chave, hoje)
+        logger.info(f"[{perfil.nome}] Heartbeat diário enviado com sucesso ({hoje}).")
+    else:
+        logger.warning(
+            f"[{perfil.nome}] Heartbeat diário falhou; não marcado como enviado e será "
+            "tentado novamente no próximo ciclo."
+        )
+
+
+def _revalidar_pendencias_digest(perfil: Perfil) -> list[tuple]:
+    """Reaplica as regras ATUAIS a tudo que ainda esta na fila do digest.
+
+    Retorna apenas (titulo, empresa, link, relevancia, exploratoria) validos
+    e limpa o flag digest_pendente de registros obsoletos. Nao apaga historico.
+    """
+    pendentes = obter_vagas_pendentes_digest_detalhadas(perfil.chave)
+    validas: list[tuple] = []
+    obsoletas: list[str] = []
+
+    for item in pendentes:
+        exploratoria = bool(item["exploratoria"])
+        if exploratoria and not perfil.eixo_secundario_ativo:
+            obsoletas.append(item["id"])
+            continue
+
+        regras = (
+            perfil.regras_eixo_secundario
+            if exploratoria and perfil.regras_eixo_secundario is not None
+            else perfil.regras
+        )
+        vaga = Job(
+            titulo=item["titulo"] or "",
+            empresa=item["empresa"] or "",
+            local=item["local"] or "",
+            link=item["link"] or "",
+            site=item["site"] or "",
+            publicado_em=item["publicado_em"] or "",
+            modalidade=item["modalidade"] or "",
+            escopo_indefinido=(item["site"] or "").lower() == "we work remotely",
+        )
+        if not vaga.combina_com(regras):
+            obsoletas.append(item["id"])
+            continue
+
+        vaga.relevancia = vaga.pontuar_relevancia(regras)
+        validas.append((vaga.titulo, vaga.empresa, vaga.link, vaga.relevancia, exploratoria))
+
+    if obsoletas:
+        descartar_vagas_digest(obsoletas)
+        logger.info(
+            f"[{perfil.nome}] Digest: {len(obsoletas)} pendência(s) obsoleta(s) "
+            "removida(s) da fila após revalidar as regras atuais."
+        )
+
+    validas.sort(key=lambda x: x[3] or 0, reverse=True)
+    return validas
 
 
 def _enviar_digest_diario(perfil: Perfil):
-    """No máximo 1 digest por dia (por perfil) — ver item 08. Junta tudo
-    que ficou digest_pendente=1 desde o último envio (pode ser de vários
-    ciclos de 3h) e manda ranqueado, melhor primeiro.
+    """Envia o digest diário depois de REVALIDAR cada pendência contra as
+    regras atuais do perfil.
 
-    Disparo: no ciclo cujo horário UTC bate com DIGEST_HORA_UTC (0 =
-    meia-noite UTC = 21h em Brasília) — o cron já passa por essa hora
-    exata todo dia, não precisa de agendamento à parte. Mesma lógica de
-    "só uma vez por dia" do heartbeat (data salva em metadados), mas com
-    um reforço: se por qualquer motivo o ciclo exato de DIGEST_HORA_UTC
-    falhar/pular um dia inteiro, manda no primeiro ciclo depois de 24h
-    sem envio — não deixa a fila crescer indefinidamente esperando um
-    horário exato que pode não voltar a bater certo (ex: workflow atrasado
-    pelo GitHub Actions naquele dia).
+    Isso fecha um bug de migração: vagas Data/BI antigas ficaram no mesmo
+    jobs.db com digest_pendente=1 e continuavam sendo enviadas mesmo depois
+    de o perfil ter sido convertido para Cybersecurity.
     """
     chave = f"digest_ultimo_dia_{perfil.chave}"
-    hoje = date.today()
-    agora = datetime.now(timezone.utc)
+    hoje_br = _hoje_brasilia()
+    agora_utc = datetime.now(timezone.utc)
 
     ultimo_envio_str = obter_metadado(chave)
-    se_ja_enviou_hoje = ultimo_envio_str == hoje.isoformat()
-    if se_ja_enviou_hoje:
+    if ultimo_envio_str == hoje_br.isoformat():
         return
 
-    horario_certo = agora.hour == DIGEST_HORA_UTC
+    horario_certo = agora_utc.hour == DIGEST_HORA_UTC
     atrasado = ultimo_envio_str is not None and (
-        hoje - date.fromisoformat(ultimo_envio_str)
+        hoje_br - date.fromisoformat(ultimo_envio_str)
     ).days >= 2
     if not (horario_certo or atrasado):
         return
 
-    vagas_pendentes = obter_vagas_pendentes_digest(perfil.chave)
-    if not vagas_pendentes:
-        # Marca mesmo sem vaga nenhuma — senão o "atrasado" acima dispara
-        # todo ciclo seguinte até aparecer alguma vaga pendente de novo.
-        definir_metadado(chave, hoje.isoformat())
+    validas = _revalidar_pendencias_digest(perfil)
+    if not validas:
+        definir_metadado(chave, hoje_br.isoformat())
+        logger.info(f"[{perfil.nome}] Digest sem vagas válidas após revalidação.")
         return
 
-    if enviar_digest(vagas_pendentes, perfil.nome):
+    if enviar_digest(validas, perfil.nome):
         marcar_digest_enviado(perfil.chave)
-        definir_metadado(chave, hoje.isoformat())
-        logger.info(f"[{perfil.nome}] Digest diário enviado: {len(vagas_pendentes)} vaga(s).")
+        definir_metadado(chave, hoje_br.isoformat())
+        logger.info(f"[{perfil.nome}] Digest diário enviado: {len(validas)} vaga(s) válida(s).")
     else:
-        # Não marca metadado nem limpa a fila — tenta de novo no próximo
-        # ciclo (ver enviar_digest/marcar_digest_enviado: preferir duplicar
-        # a perder vaga).
         logger.warning(
-            f"[{perfil.nome}] Falha ao enviar digest diário ({len(vagas_pendentes)} vaga(s) "
-            "pendentes) - tenta de novo no próximo ciclo."
+            f"[{perfil.nome}] Falha ao enviar digest diário ({len(validas)} vaga(s) "
+            "válida(s) pendentes) - tenta de novo no próximo ciclo."
         )
+
 
 
 def ciclo_de_busca(perfil: Perfil):
@@ -198,8 +239,9 @@ def ciclo_de_busca(perfil: Perfil):
 
     termos_do_ciclo = _proximo_bloco_termos(perfil)
     logger.info(
-        f"[{perfil.nome}] Bloco de termos deste ciclo: {len(termos_do_ciclo)}/"
-        f"{len(perfil.termos_busca)} — {', '.join(termos_do_ciclo)}"
+        f"[{perfil.nome}] Termos deste ciclo: {len(termos_do_ciclo)} total "
+        f"({len(perfil.termos_core)} core + até {perfil.termos_por_ciclo} rotativos) — "
+        f"{', '.join(termos_do_ciclo)}"
     )
     scrapers = _construir_scrapers(perfil, termos_do_ciclo)
 

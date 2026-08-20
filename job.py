@@ -697,6 +697,15 @@ class RegrasFiltro:
     # mercado hispanofalante-lusófono explicitamente. None = não checa
     # (BR não precisa — fonte já é 100% brasileira/portuguesa).
     idiomas_exigidos: list[str] | None = None
+    # Titulos que devem ser rejeitados mesmo quando contem um cargo generico
+    # de seguranca. Usado para separar SOC/Cloud/Detection de GRC, IAM puro,
+    # AppSec puro etc. None = sem exclusao explicita.
+    keywords_exclusao_titulo: list[str] | None = None
+    # Muitos anuncios brasileiros deixam SIEM/Cloud/EDR apenas na descricao
+    # e usam titulo generico ("Analista de Seguranca"). Quando True, o cargo
+    # ambiguo pode passar sem qualificador no titulo, desde que nao bata uma
+    # exclusao explicita acima.
+    permitir_ambiguo_sem_qualificador: bool = False
 
 
 @dataclass
@@ -953,19 +962,38 @@ class Job:
             _contem_termo(_normalizar(k), titulo_norm) for k in regras.keywords_forte
         )
 
-        bate_ambiguo = any(
-            _normalizar(k) in titulo_norm for k in regras.keywords_ambiguo
-        ) and any(
+        bate_ambiguo_base = any(
+            _contem_termo(_normalizar(k), titulo_norm, aceitar_plural=True)
+            for k in regras.keywords_ambiguo
+        )
+        bate_qualificador_ambiguo = any(
             _contem_termo(_normalizar(q), titulo_norm, aceitar_plural=True)
             for q in regras.qualificadores_dados
         )
+        bate_exclusao_titulo = any(
+            _contem_termo(_normalizar(q), titulo_norm, aceitar_plural=True)
+            for q in (regras.keywords_exclusao_titulo or [])
+        )
+        bate_ambiguo = (
+            bate_ambiguo_base
+            and (regras.permitir_ambiguo_sem_qualificador or bate_qualificador_ambiguo)
+            and not bate_exclusao_titulo
+        )
+
+        # Exclusao de trilha explicita no titulo vence ate keyword forte. Isso
+        # evita, por exemplo, "Cloud Security - GRC" entrar por conter a
+        # expressao Cloud Security mesmo declarando outra especialidade.
+        if bate_exclusao_titulo:
+            bate_forte = False
 
         # Espelho da regra acima: ferramenta no título só vale com cargo junto.
-        bate_ferramenta = any(
-            _normalizar(f) in titulo_norm for f in regras.ferramentas_titulo
-        ) and any(
-            _contem_termo(_normalizar(q), titulo_norm, aceitar_plural=True)
-            for q in regras.qualificadores_cargo
+        bate_ferramenta = (
+            any(_normalizar(f) in titulo_norm for f in regras.ferramentas_titulo)
+            and any(
+                _contem_termo(_normalizar(q), titulo_norm, aceitar_plural=True)
+                for q in regras.qualificadores_cargo
+            )
+            and not bate_exclusao_titulo
         )
 
         bate_keyword = bate_forte or bate_ambiguo or bate_ferramenta

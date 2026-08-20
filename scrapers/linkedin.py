@@ -15,7 +15,7 @@ logger = get_logger()
 # alcançava vaga de cidade menor (Recife, Natal, Maceió etc.) — confirmado
 # ao vivo que vaga real dessas cidades existe mas fica fora do top 10
 # nacional. O LinkedIn pagina via &start= (10 vagas por página).
-MAX_PAGINAS = 3
+MAX_PAGINAS = 4
 
 # Segunda passada, só com o filtro nativo de remoto do LinkedIn (f_WT=2 —
 # confirmado ao vivo que existe e funciona: filtra de verdade por vaga
@@ -27,7 +27,7 @@ MAX_PAGINAS = 3
 # literalmente escrita "Remoto" na listagem, o que quase nunca acontece).
 # Menos páginas que a passada nacional pra não dobrar o custo do scraper —
 # volume de vaga remota tende a ser menor que o total nacional por termo.
-MAX_PAGINAS_REMOTO = 2
+MAX_PAGINAS_REMOTO = 3
 
 
 class LinkedInScraper(BaseScraper):
@@ -90,10 +90,12 @@ class LinkedInScraper(BaseScraper):
                 vagas.extend(self._buscar_termo(termo, location, remoto=True))
 
         total_mercados = len(self.locations) + len(self.locations_remoto_apenas)
+        detalhes = [f"{', '.join(self.locations)} [completo]"] if self.locations else []
+        if self.locations_remoto_apenas:
+            detalhes.append(f"{', '.join(self.locations_remoto_apenas)} [remoto apenas]")
         logger.info(
             f"[LinkedIn] {len(vagas)} vaga(s) encontrada(s) no total "
-            f"({total_mercados} mercado(s): {', '.join(self.locations)} [completo] + "
-            f"{', '.join(self.locations_remoto_apenas)} [remoto apenas])"
+            f"({total_mercados} mercado(s): {' + '.join(detalhes)})"
         )
         return vagas
 
